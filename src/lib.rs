@@ -320,11 +320,11 @@ mod tests {
 	use std::sync::atomic::Ordering::Relaxed;
 	use std::sync::{mpsc, Arc};
 	use std::thread;
-use std::time::Duration;
+	use std::time::Duration;
 	use producer::MissingFreeSlots;
 	use crate::wait_strategies::{Sleep, WaitStrategy};
 
-use super::*;
+	use super::*;
 
 	#[derive(Debug)]
 	struct Event {
@@ -368,6 +368,7 @@ use super::*;
 		|| Event { num: -1 }
 	}
 
+	#[cfg_attr(miri, ignore)]// Miri disabled due to (intentional) leak.
 	#[test]
 	fn single_producer_supports_heterogeneous_processor_wait_strategies() {
 		let a = wait_counter();
@@ -387,6 +388,7 @@ use super::*;
 		drop(producer);
 	}
 
+	#[cfg_attr(miri, ignore)]// Miri disabled due to (intentional) leak.
 	#[test]
 	fn multi_producer_supports_heterogeneous_processor_wait_strategies() {
 		let a = wait_counter();
