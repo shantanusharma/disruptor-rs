@@ -168,7 +168,7 @@
 //!             }
 //!         });
 //!     });
-//!     // At this point, the Producers instances go out of scope and when the
+//!     // At this point, the Producer instances go out of scope and when the
 //!     // processors are done handling all events, the Disruptor is dropped
 //!     // as well.
 //! }
@@ -376,7 +376,7 @@ mod tests {
 		let c = wait_counter();
 		let d = wait_counter();
 
-		let producer = build_single_producer(8, factory(), BusySpin)
+		let _producer = build_single_producer(8, factory(), BusySpin)
 			.handle_events_with_wait_strategy(|_: &Event, _, _| {}, CountingWaitA(a))
 			.handle_events_and_state_with_wait_strategy(|_: &mut (), _: &Event, _, _| {}, || {}, CountingWaitB(b))
 			.and_then()
@@ -385,7 +385,6 @@ mod tests {
 			.build();
 
 		wait_for_strategies(&[a, b, c, d]);
-		drop(producer);
 	}
 
 	#[cfg_attr(miri, ignore)]// Miri disabled due to (intentional) leak.
@@ -396,7 +395,7 @@ mod tests {
 		let c = wait_counter();
 		let d = wait_counter();
 
-		let producer = build_multi_producer(64, factory(), BusySpin)
+		let _producer = build_multi_producer(64, factory(), BusySpin)
 			.handle_events_and_state_with_wait_strategy(|_: &mut (), _: &Event, _, _| {}, || {}, CountingWaitA(a))
 			.handle_events_with_wait_strategy(|_: &Event, _, _| {}, CountingWaitB(b))
 			.and_then()
@@ -405,7 +404,6 @@ mod tests {
 			.build();
 
 		wait_for_strategies(&[a, b, c, d]);
-		drop(producer);
 	}
 
 	#[test]
