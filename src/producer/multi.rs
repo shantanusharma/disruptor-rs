@@ -357,11 +357,10 @@ impl Barrier for MultiProducerBarrier {
 				availability            = self.availability_at(availability_index).load(Ordering::Acquire);
 				bit_index               = 0;
 
-				if availability_index == 0 {
-					// If we wrapped then we're now looking for the flipped bit.
-					// (I.e. from odd to even or from even to odd.)
-					availability_flag ^= 1;
-				}
+				// If we wrapped then we're now looking for the flipped bit.
+				// (I.e. from odd to even or from even to odd.)
+				// Note, xor'ing `a` with 0 leaves `a` unchanged.
+				availability_flag ^= (availability_index == 0) as u64;
 			}
 		}
 	}
