@@ -1,4 +1,4 @@
-use std::{sync::{atomic::{fence, AtomicI64, Ordering}, Arc}};
+use std::{sync::{atomic::{AtomicI64, Ordering}, Arc}};
 use crossbeam_utils::CachePadded;
 use thiserror::Error;
 use crate::{cursor::Cursor, barrier::Barrier, ringbuffer::RingBuffer, Sequence};
@@ -197,7 +197,7 @@ where
 
 	/// Returns `true` if there is at least one event available to poll.
 	///
-	/// This is a cheap check (no fence, no mutation) intended for use as a
+	/// This is a cheap check (no mutation) intended for use as a
 	/// double-check before blocking on a condition variable. It does NOT
 	/// advance the cursor or consume any events.
 	///
@@ -205,7 +205,7 @@ where
 	/// [`take`](Self::take) and handle [`Polling::Shutdown`].
 	#[inline]
 	pub fn has_available(&self) -> bool {
-		let sequence = self.cursor.relaxed_value() + 1;
+		let sequence = self.cursor.load() + 1;
 		self.dependent_barrier.get_after(sequence) >= sequence
 	}
 
@@ -243,7 +243,7 @@ where
 	/// };
 	/// ```
 	pub fn take(&mut self, limit: u64) -> Result<EventGuard<'_, E, B>, Polling> {
-		let cursor_at = self.cursor.relaxed_value();
+		let cursor_at = self.cursor.load();
 		let sequence  = cursor_at + 1;
 
 		if sequence == self.shutdown_at_sequence.load(Ordering::Relaxed) {
@@ -254,7 +254,6 @@ where
 		if available < sequence {
 			return Err(Polling::NoEvents);
 		}
-		fence(Ordering::Acquire);
 
 		let max_sequence = (cursor_at).saturating_add_unsigned(limit);
 		let available    = std::cmp::min(available, max_sequence);

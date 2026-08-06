@@ -1,4 +1,4 @@
-use std::{sync::{atomic::{fence, AtomicI64, Ordering}, Arc}, thread::{self, JoinHandle}};
+use std::{sync::{atomic::{AtomicI64, Ordering}, Arc}, thread::{self, JoinHandle}};
 use crossbeam_utils::CachePadded;
 
 use crate::{affinity::set_affinity_if_defined, barrier::Barrier, builder::Shared, cursor::Cursor, wait_strategies::WaitStrategy, Sequence};
@@ -43,7 +43,7 @@ impl SingleConsumerBarrier {
 impl Barrier for SingleConsumerBarrier {
 	#[inline]
 	fn get_after(&self, _lower_bound: Sequence) -> Sequence {
-		self.cursor.relaxed_value()
+		self.cursor.load()
 	}
 }
 
@@ -61,7 +61,7 @@ impl Barrier for MultiConsumerBarrier {
 	#[inline]
 	fn get_after(&self, _lower_bound: Sequence) -> Sequence {
 		self.cursors.iter().fold(i64::MAX, |min_sequence, cursor| {
-			let sequence = cursor.relaxed_value();
+			let sequence = cursor.load();
 			std::cmp::min(sequence, min_sequence)
 		})
 	}
@@ -177,6 +177,5 @@ where
 		wait_strategy.wait_for(sequence);
 		available = barrier.get_after(sequence);
 	}
-	fence(Ordering::Acquire);
 	Some(available)
 }

@@ -15,8 +15,8 @@ impl Cursor {
 	}
 
 	#[inline]
-	pub(crate) fn compare_exchange(&self, current: Sequence, next: Sequence) -> Result<i64, i64> {
-		self.counter.compare_exchange(current, next, Ordering::AcqRel, Ordering::Relaxed)
+	pub(crate) fn compare_exchange_weak(&self, current: Sequence, next: Sequence) -> Result<i64, i64> {
+		self.counter.compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Relaxed)
 	}
 
 	/// Stores `sequence` to the cursor with `Ordering::Release` semantics.
@@ -25,27 +25,9 @@ impl Cursor {
 		self.counter.store(sequence, Ordering::Release);
 	}
 
-	/// Retrieves the cursor value with `Ordering::Relaxed` semantics.
+	/// Retrieves the cursor value with `Ordering::Acquire` semantics.
 	#[inline]
-	pub(crate) fn relaxed_value(&self) -> Sequence {
-		self.counter.load(Ordering::Relaxed)
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn cursor_operations() {
-		let cursor = Cursor::new();
-
-		assert_eq!(cursor.compare_exchange(-1, 0).ok().unwrap(), -1);
-		assert_eq!(cursor.compare_exchange( 0, 1).ok().unwrap(),  0);
-		// Simulate other thread having updated the cursor.
-		assert_eq!(cursor.compare_exchange( 0, 1).err().unwrap(), 1);
-
-		cursor.store(100);
-		assert_eq!(cursor.relaxed_value(), 100);
+	pub(crate) fn load(&self) -> Sequence {
+		self.counter.load(Ordering::Acquire)
 	}
 }

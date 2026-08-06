@@ -1,4 +1,4 @@
-use std::{process, sync::{atomic::{fence, AtomicI64, AtomicU64, Ordering}, Arc, Mutex}};
+use std::{process, sync::{atomic::{AtomicI64, AtomicU64, Ordering}, Arc, Mutex}};
 use crossbeam_utils::CachePadded;
 use crate::{barrier::{Barrier, NONE}, consumer::Consumer, producer::ProducerBarrier, ringbuffer::RingBuffer, producer::{Producer, RingBufferFull}, Sequence};
 use crate::cursor::Cursor;
@@ -166,14 +166,13 @@ where
 				if free_slots < n {
 					return Err(MissingFreeSlots((n - free_slots) as u64));
 				}
-				fence(Ordering::Acquire);
 
 				// We now know how far we can continue until we get right behind the slowest consumers'
 				// current position without checking where they actually are.
 				self.sequence_clear_of_consumers = current + free_slots;
 			}
 
-			match self.producer_barrier.compare_exchange(current, n_next) {
+			match self.producer_barrier.compare_exchange_weak(current, n_next) {
 				Ok(_) => {
 					// The sequence interval `]current; n_next] is now exclusive for this producer.
 					self.claimed_sequence = n_next;
@@ -221,8 +220,7 @@ where
 		let iter   = MutBatchIter::new(lower, upper, &self.ring_buffer);
 		updates(iter);
 		// Make publications available by publishing all the sequences in the interval [lower; upper].
-		fence(Ordering::Release);
-		self.producer_barrier.publish_range_relaxed(lower, n);
+		self.producer_barrier.publish_range(lower, n);
 		upper
 	}
 }
@@ -266,12 +264,12 @@ impl MultiProducerBarrier {
 
 	#[inline]
 	fn current(&self) -> Sequence {
-		self.cursor.relaxed_value()
+		self.cursor.load()
 	}
 
 	#[inline]
-	fn compare_exchange(&self, current: Sequence, next: Sequence) -> Result<i64, i64> {
-		self.cursor.compare_exchange(current, next)
+	fn compare_exchange_weak(&self, current: Sequence, next: Sequence) -> Result<i64, i64> {
+		self.cursor.compare_exchange_weak(current, next)
 	}
 
 	/// Returns the availability index and the bit index of the given sequence number.
@@ -302,7 +300,7 @@ impl MultiProducerBarrier {
 	}
 
 	#[inline]
-	fn publish_range_relaxed(&self, from: Sequence, n: i64) {
+	fn publish_range(&self, from: Sequence, n: i64) {
 		let (mut availability_index, mut bit_index) = self.calculate_availability_indices(from);
 		let mut flip_mask                           = 0_u64;
 		let mut availability                        = self.availability_at(availability_index);
@@ -316,7 +314,7 @@ impl MultiProducerBarrier {
 			}
 			else {
 				// Commit flip mask so far to current bit field.
-				availability.fetch_xor(flip_mask, Ordering::Relaxed);
+				availability.fetch_xor(flip_mask, Ordering::Release);
 				// Load next bit field and reset flip_mask.
 				let next_sequence       = from + i + 1;
 				(availability_index, _) = self.calculate_availability_indices(next_sequence);
@@ -330,16 +328,6 @@ impl MultiProducerBarrier {
 			availability.fetch_xor(flip_mask, Ordering::Relaxed);
 		}
 	}
-
-	#[inline]
-	fn publish_with_ordering(&self, sequence: Sequence, ordering: Ordering) {
-		let (availability_index, bit_index) = self.calculate_availability_indices(sequence);
-		let availability                    = self.availability_at(availability_index);
-		let mask                            = 1 << bit_index;
-		// XOR operation will flip the bit on exactly the bit_index position - encoding that we have
-		// published an event in an even or odd round.
-		availability.fetch_xor(mask, ordering);
-	}
 }
 
 impl Barrier for MultiProducerBarrier {
@@ -347,7 +335,7 @@ impl Barrier for MultiProducerBarrier {
 	fn get_after(&self, prev: Sequence) -> Sequence {
 		let mut availability_flag                   = self.calculate_availability_flag(prev);
 		let (mut availability_index, mut bit_index) = self.calculate_availability_indices(prev);
-		let mut availability                        = self.availability_at(availability_index).load(Ordering::Relaxed);
+		let mut availability                        = self.availability_at(availability_index).load(Ordering::Acquire);
 		// Shift bits to first relevant bit.
 		availability                              >>= bit_index;
 		let mut highest_available                   = prev;
@@ -366,7 +354,7 @@ impl Barrier for MultiProducerBarrier {
 			else {
 				// Load next bit field.
 				(availability_index, _) = self.calculate_availability_indices(highest_available);
-				availability            = self.availability_at(availability_index).load(Ordering::Relaxed);
+				availability            = self.availability_at(availability_index).load(Ordering::Acquire);
 				bit_index               = 0;
 
 				if availability_index == 0 {
@@ -382,7 +370,12 @@ impl Barrier for MultiProducerBarrier {
 impl ProducerBarrier for MultiProducerBarrier {
 	#[inline]
 	fn publish(&self, sequence: Sequence) {
-		self.publish_with_ordering(sequence, Ordering::Release);
+		let (availability_index, bit_index) = self.calculate_availability_indices(sequence);
+		let availability                    = self.availability_at(availability_index);
+		let mask                            = 1 << bit_index;
+		// XOR operation will flip the bit on exactly the bit_index position - encoding that we have
+		// published an event in an even or odd round.
+		availability.fetch_xor(mask, Ordering::Release);
 	}
 }
 
@@ -411,7 +404,7 @@ mod tests {
 	fn publication_of_single_event_for_small_barrier() {
 		let barrier = MultiProducerBarrier::new(64);
 
-		barrier.publish_range_relaxed(0, 1);
+		barrier.publish_range(0, 1);
 		// Verify published:
 		assert_eq!(barrier.get_after(0), 0);
 	}
@@ -420,7 +413,7 @@ mod tests {
 	fn publication_of_range_for_small_barrier() {
 		let barrier = MultiProducerBarrier::new(64);
 
-		barrier.publish_range_relaxed(0, 10);
+		barrier.publish_range(0, 10);
 		// Verify published:
 		assert_eq!(barrier.get_after(0), 9);
 	}
@@ -429,11 +422,11 @@ mod tests {
 	fn publication_of_range_wrapping_ringbuffer_for_small_barrier() {
 		let barrier = MultiProducerBarrier::new(64);
 
-		barrier.publish_range_relaxed(0, 50);
+		barrier.publish_range(0, 50);
 		// Verify published:
 		assert_eq!(barrier.get_after(0), 49);
 
-		barrier.publish_range_relaxed(50, 50);
+		barrier.publish_range(50, 50);
 		// Verify published:
 		assert_eq!(barrier.get_after(49), 99);
 	}
@@ -442,16 +435,16 @@ mod tests {
 	fn publication_of_range_wrapping_ringbuffer_for_barrier() {
 		let barrier = MultiProducerBarrier::new(128);
 
-		barrier.publish_range_relaxed(0, 100);
+		barrier.publish_range(0, 100);
 		// Verify published:
 		assert_eq!(barrier.get_after(0), 99);
 		// Verify not published:
 
-		barrier.publish_range_relaxed(100, 100);
+		barrier.publish_range(100, 100);
 		// Verify published:
 		assert_eq!(barrier.get_after(99), 199);
 
-		barrier.publish_range_relaxed(200, 100);
+		barrier.publish_range(200, 100);
 		// Verify published:
 		assert_eq!(barrier.get_after(199), 299);
 	}

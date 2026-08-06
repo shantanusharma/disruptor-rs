@@ -1,4 +1,4 @@
-use std::sync::atomic::{fence, Ordering};
+use std::sync::atomic::Ordering;
 use crate::{barrier::Barrier, cursor::Cursor, producer::ProducerBarrier};
 use crossbeam_utils::CachePadded;
 use crate::{consumer::Consumer, ringbuffer::RingBuffer, Sequence};
@@ -106,7 +106,6 @@ where
 			if free_slots < n {
 				return Err(MissingFreeSlots((n - free_slots) as u64));
 			}
-			fence(Ordering::Acquire);
 
 			// We can now continue until we get right behind the slowest consumer's current
 			// position without checking where it actually is.
@@ -182,7 +181,7 @@ impl Barrier for SingleProducerBarrier {
 	/// Gets the `Sequence` of the last published event.
 	#[inline]
 	fn get_after(&self, _prev: Sequence) -> Sequence {
-		self.cursor.relaxed_value()
+		self.cursor.load()
 	}
 }
 
