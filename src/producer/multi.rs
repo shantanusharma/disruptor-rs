@@ -339,7 +339,6 @@ impl Barrier for MultiProducerBarrier {
 		// Shift bits to first relevant bit.
 		availability                              >>= bit_index;
 		let mut highest_available                   = prev;
-
 		loop {
 			if availability & 1 != availability_flag {
 				return highest_available - 1;
