@@ -547,7 +547,10 @@ A key feature that this library supports is multiple producers from different th
 
 # Contributions
 
-You are welcome to create a Pull-Request or open an issue with suggestions for improvements.
+You are welcome to open an issue with suggestions for improvements or any questions you might have.
+Please do this before starting the implementation of new features.
+
+AI generated issues or PRs without your (human) involvement will be closed.
 
 Changes are accepted solely at my discretion and I will focus on whether the changes are a good fit for the purpose and design of this crate.
 
