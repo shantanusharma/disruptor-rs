@@ -325,7 +325,7 @@ impl MultiProducerBarrier {
 		}
 		// If there's any remaining - commit them to the last bit field.
 		if flip_mask > 0 {
-			availability.fetch_xor(flip_mask, Ordering::Relaxed);
+			availability.fetch_xor(flip_mask, Ordering::Release);
 		}
 	}
 }
