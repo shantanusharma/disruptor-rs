@@ -358,7 +358,8 @@ impl Barrier for MultiProducerBarrier {
 
 				// If we wrapped then we're now looking for the flipped bit.
 				// (I.e. from odd to even or from even to odd.)
-				// Note, xor'ing `a` with 0 leaves `a` unchanged.
+				// Note, 0 is an identity element of the xor operator, so if
+				// `availability_index` != 0 then `availability_flag` is left unchanged.
 				availability_flag ^= (availability_index == 0) as u64;
 			}
 		}
